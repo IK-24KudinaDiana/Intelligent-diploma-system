@@ -1,0 +1,777 @@
+@page "/success"
+@layout CinemaKioskRecommender.Kiosk.Layout.ShellLayout
+
+@using CinemaKioskRecommender.Application.DTOs
+@using CinemaKioskRecommender.Kiosk.Services
+@using CinemaKioskRecommender.Kiosk.Localization
+@using MudBlazor
+
+@implements IAsyncDisposable
+@inject KioskState KioskState
+@inject KioskStateService KioskStateService
+@inject NavigationManager Nav
+@inject HttpClient Http
+@inject ISnackbar Snackbar
+@inject IJSRuntime JSRuntime
+@inject AiCommandListenerService AiListener
+@inject LiveKitInteropService LiveKitInterop
+
+<div class="success-screen">
+
+    @if (KioskState.LastTicket != null)
+    {
+        <div class="success-content">
+            <div class="success-check-wrap">
+                <div class="success-check-glow"></div>
+
+                <MudIcon Icon="@Icons.Material.Filled.Check"
+                         Class="success-check-icon" />
+            </div>
+            <div class="success-headings">
+                <h1 class="success-title">
+                    Квиток успішно оформлено!
+                </h1>
+
+                <div class="success-subtitle">
+                    Дякуємо за покупку
+                </div>
+            </div>
+            <div class="ticket-success-card">
+
+                <div class="ticket-card-top">
+                    <div>
+                        <div class="ticket-label">
+                            Фільм
+                        </div>
+
+                        <div class="ticket-movie-title">
+                            @KioskState.LastTicket.MovieTitle
+                        </div>
+                    </div>
+
+                    <div class="ticket-badge">
+                        @UiStrings.Confirmed
+                    </div>
+                </div>
+
+                <div class="ticket-divider"></div>
+
+                <div class="ticket-info-grid">
+
+                    <div class="ticket-info-block">
+                        <div class="ticket-label">Зал</div>
+                        <div class="ticket-value">
+                            @KioskState.LastTicket.HallName
+                        </div>
+                    </div>
+
+                    <div class="ticket-info-block">
+                        <div class="ticket-label">Дата та час</div>
+                        <div class="ticket-value">
+                            @KioskState.LastTicket.SessionStartTime.ToString("dd.MM.yyyy HH:mm")
+                        </div>
+                    </div>
+
+                    <div class="ticket-info-block">
+                        <div class="ticket-label">Місця</div>
+                        <div class="ticket-value accent">
+                            @string.Join(", ", KioskState.LastTicket.SeatNumbers)
+                        </div>
+                    </div>
+
+                    <div class="ticket-info-block">
+                        <div class="ticket-label">До сплати</div>
+                        <div class="ticket-price">
+                            @KioskState.LastTicket.TotalPrice грн
+                        </div>
+                    </div>
+
+                </div>
+            </div>
+            <div class="success-actions">
+
+                <button class="success-btn-primary"
+                        @onclick="PrintTicket">
+                    <span>🖨</span>
+                    <span>Друк квитка</span>
+                </button>
+
+                <button class="success-btn-secondary"
+                        @onclick="ShowQrCode">
+                    <span>📱</span>
+                    <span>QR-код квитка</span>
+                </button>
+
+            </div>
+            <div class="success-redirect-hint">
+                Автоматичне повернення на головну через @redirectMinutesLeft хв
+            </div>
+            <button class="success-home-btn"
+                    @onclick="GoToHome">
+                Повернутися на головну
+            </button>
+
+        </div>
+    }
+    else
+    {
+        <div class="success-error">
+            Інформація про квиток відсутня
+        </div>
+    }
+</div>
+
+@if (KioskState.LastTicket != null)
+{
+    <section class="ticket-print-template" aria-label="Друкований шаблон квитка">
+        <div class="print-ticket">
+            <div class="print-ticket-header">
+                <div>
+                    <div class="print-ticket-brand">KinoBot Cinema</div>
+                    <div class="print-ticket-caption">Електронний квиток</div>
+                </div>
+
+                <div class="print-ticket-number">
+                    № @TicketNumber
+                </div>
+            </div>
+
+            <div class="print-ticket-divider"></div>
+
+            <div class="print-ticket-movie">
+                @KioskState.LastTicket.MovieTitle
+            </div>
+
+            <div class="print-ticket-grid">
+                <div>
+                    <span>Дата та час</span>
+                    <strong>@KioskState.LastTicket.SessionStartTime.ToString("dd.MM.yyyy HH:mm")</strong>
+                </div>
+
+                <div>
+                    <span>Зал</span>
+                    <strong>@KioskState.LastTicket.HallName</strong>
+                </div>
+
+                <div>
+                    <span>Місця</span>
+                    <strong>@TicketSeatsText</strong>
+                </div>
+
+                <div>
+                    <span>Сума</span>
+                    <strong>@KioskState.LastTicket.TotalPrice грн</strong>
+                </div>
+            </div>
+
+            <div class="print-ticket-footer">
+                <div class="print-ticket-qr">
+                    <img src="@QrCodeUrl" alt="QR-код квитка" />
+                </div>
+
+                <div class="print-ticket-note">
+                    <strong>Покажіть цей квиток на вході до залу.</strong>
+                    <span>Квиток дійсний лише на вказаний сеанс. Зберігайте його до завершення фільму.</span>
+                    <small>Придбано: @KioskState.LastTicket.PurchasedAt.ToString("dd.MM.yyyy HH:mm")</small>
+                </div>
+            </div>
+        </div>
+    </section>
+}
+@if (showQrModal && KioskState.LastTicket != null)
+{
+    <div class="qr-full-overlay">
+
+        <div class="qr-modal-box">
+
+            <div class="qr-modal-header">
+                <MudText Typo="Typo.h5">
+                    Ваш квиток
+                </MudText>
+
+                <button class="qr-close-btn"
+                        @onclick="CloseQrModal">
+                    ✕
+                </button>
+            </div>
+
+            <div class="qr-big-container">
+                <img src="@QrCodeUrl"
+                     alt="QR Code"
+                     class="qr-big" />
+            </div>
+
+            <div class="qr-hint-text">
+                Наведи камеру телефону на QR-код,<br />
+                щоб відкрити PDF квитка
+            </div>
+
+            <button class="kiosk-btn-secondary mt-4"
+                    @onclick="CloseQrModal">
+                Закрити
+            </button>
+
+        </div>
+
+    </div>
+}
+
+<style>
+
+    .success-screen {
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        width: 100%;
+        min-height: 100%;
+        padding: clamp(32px, 4vw, 48px) clamp(20px, 3.2vw, 64px);
+        position: relative;
+        overflow: auto;
+        background: transparent;
+    }
+
+        .success-screen::before {
+            display: none;
+        }
+
+    .success-content {
+        width: min(860px, 100%);
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        position: relative;
+        z-index: 2;
+    }
+
+    .success-check-wrap {
+        width: 140px;
+        height: 140px;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        position: relative;
+        background: radial-gradient(circle, rgba(0,255,170,.22), rgba(0,255,170,.05));
+        border: 1px solid rgba(255,255,255,.08);
+        backdrop-filter: blur(14px);
+    }
+
+    .success-check-glow {
+        position: absolute;
+        width: 180px;
+        height: 180px;
+        border-radius: 50%;
+        background: rgba(0,255,163,.18);
+        filter: blur(40px);
+    }
+
+    .success-check-icon {
+        font-size: 86px !important;
+        color: #37ffb1;
+        z-index: 2;
+    }
+
+    .success-headings {
+        text-align: center;
+        margin-top: 32px;
+    }
+
+    .success-title {
+        color: white;
+        font-size: 42px;
+        font-weight: 800;
+        letter-spacing: -1px;
+        margin: 0;
+    }
+
+    .success-subtitle {
+        margin-top: 10px;
+        color: rgba(255,255,255,.68);
+        font-size: 18px;
+    }
+
+    .ticket-success-card {
+        width: 100%;
+        margin-top: 42px;
+        background: linear-gradient( 180deg, rgba(16,22,35,.96), rgba(9,12,18,.96));
+        border: 1px solid rgba(255,255,255,.08);
+        border-radius: 32px;
+        padding: 34px;
+        box-shadow: 0 20px 80px rgba(0,0,0,.55), inset 0 1px 0 rgba(255,255,255,.04);
+        backdrop-filter: blur(24px);
+    }
+
+    .ticket-card-top {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        gap: 20px;
+    }
+
+    .ticket-label {
+        color: rgba(255,255,255,.45);
+        font-size: 13px;
+        text-transform: uppercase;
+        letter-spacing: 1px;
+    }
+
+    .ticket-movie-title {
+        color: white;
+        font-size: 32px;
+        font-weight: 700;
+        line-height: 1.15;
+        margin-top: 8px;
+    }
+
+    .ticket-badge {
+        padding: 10px 16px;
+        border-radius: 999px;
+        background: rgba(55,255,177,.12);
+        border: 1px solid rgba(55,255,177,.24);
+        color: #37ffb1;
+        font-size: 12px;
+        font-weight: 700;
+        letter-spacing: 1px;
+    }
+
+    .ticket-divider {
+        height: 1px;
+        background: rgba(255,255,255,.08);
+        margin: 28px 0;
+    }
+
+    .ticket-info-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 28px;
+    }
+
+    .ticket-info-block {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+    }
+
+    .ticket-value {
+        color: white;
+        font-size: 20px;
+        font-weight: 600;
+    }
+
+        .ticket-value.accent {
+            color: #7cc8ff;
+        }
+
+    .ticket-price {
+        color: #37ffb1;
+        font-size: 34px;
+        font-weight: 800;
+        letter-spacing: -1px;
+    }
+
+    .success-actions {
+        width: 100%;
+        display: flex;
+        flex-direction: column;
+        gap: 18px;
+        margin-top: 34px;
+    }
+
+    .success-btn-primary,
+    .success-btn-secondary {
+        width: 100%;
+        height: 74px;
+        border-radius: 22px;
+        font-size: 22px;
+        font-weight: 700;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 14px;
+        transition: .25s ease;
+        cursor: pointer;
+    }
+
+    .success-btn-primary {
+        border: none;
+        color: white;
+        background: linear-gradient( 135deg, #5d7cff 0%, #8b5cf6 100%);
+        box-shadow: 0 14px 40px rgba(91,124,255,.35);
+    }
+
+        .success-btn-primary:hover {
+            transform: translateY(-2px) scale(1.01);
+        }
+
+    .success-btn-secondary {
+        background: transparent;
+        color: white;
+        border: 2px solid rgba(255,255,255,.16);
+        backdrop-filter: blur(10px);
+    }
+
+        .success-btn-secondary:hover {
+            background: rgba(255,255,255,.04);
+            transform: translateY(-2px);
+        }
+
+    .success-redirect-hint {
+        margin-top: 20px;
+        color: rgba(255,255,255,.42);
+        font-size: 14px;
+        text-align: center;
+    }
+
+    .success-home-btn {
+        margin-top: 12px;
+        background: none;
+        border: none;
+        color: rgba(255,255,255,.52);
+        font-size: 16px;
+        transition: .2s ease;
+        cursor: pointer;
+    }
+
+        .success-home-btn:hover {
+            color: white;
+        }
+
+    .success-error {
+        color: white;
+        font-size: 22px;
+    }
+    .qr-full-overlay {
+        position: fixed;
+        inset: 0;
+        z-index: 9999;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: rgba(2,6,14,.88);
+        backdrop-filter: blur(14px);
+    }
+
+    .qr-modal-box {
+        width: 440px;
+        max-width: 90vw;
+        background: linear-gradient( 180deg, rgba(16,22,35,.98), rgba(8,11,18,.98));
+        border: 1px solid rgba(255,255,255,.08);
+        border-radius: 30px;
+        padding: 28px;
+        box-shadow: 0 30px 80px rgba(0,0,0,.6);
+    }
+
+    .qr-modal-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 24px;
+    }
+
+    .qr-close-btn {
+        width: 40px;
+        height: 40px;
+        border-radius: 12px;
+        border: none;
+        cursor: pointer;
+        color: white;
+        background: rgba(255,255,255,.08);
+        font-size: 18px;
+    }
+
+    .qr-big-container {
+        display: flex;
+        justify-content: center;
+    }
+
+    .qr-big {
+        width: 320px;
+        height: 320px;
+        border-radius: 24px;
+        background: white;
+        padding: 14px;
+    }
+
+    .qr-hint-text {
+        text-align: center;
+        color: rgba(255,255,255,.65);
+        font-size: 16px;
+        margin-top: 24px;
+        line-height: 1.6;
+    }
+
+    .ticket-print-template {
+        display: none;
+    }
+
+    @@media print {
+        .ticket-print-template,
+        .success-actions,
+        .success-home-btn,
+        .success-redirect-hint,
+        .qr-full-overlay {
+            display: none !important;
+        }
+
+        .success-screen {
+            min-height: auto;
+            padding: 18mm;
+            overflow: visible;
+            background: #05060f !important;
+            print-color-adjust: exact;
+            -webkit-print-color-adjust: exact;
+        }
+
+        .success-content {
+            width: 100%;
+        }
+
+        .success-check-wrap {
+            width: 92px;
+            height: 92px;
+        }
+
+        .success-check-icon {
+            font-size: 58px !important;
+        }
+
+        .success-title {
+            font-size: 30px;
+        }
+
+        .success-headings {
+            margin-top: 18px;
+        }
+
+        .ticket-success-card {
+            width: 100%;
+            box-shadow: none;
+            print-color-adjust: exact;
+            -webkit-print-color-adjust: exact;
+        }
+    }
+
+    @@media(max-width:768px) {
+
+        .success-title {
+            font-size: 32px;
+        }
+
+        .ticket-success-card {
+            padding: 24px;
+        }
+
+        .ticket-info-grid {
+            grid-template-columns: 1fr;
+            gap: 20px;
+        }
+
+        .ticket-movie-title {
+            font-size: 26px;
+        }
+
+        .ticket-price {
+            font-size: 28px;
+        }
+    }
+
+</style>
+
+@code {
+
+    private bool showQrModal = false;
+    private int redirectMinutesLeft = 1;
+    private CancellationTokenSource? _redirectCts;
+    private CancellationTokenSource? _qrInactivityCts;
+    private bool _navigatingHome;
+    private bool _purchasePersistStarted;
+    private static readonly TimeSpan QrInactivityTimeout = TimeSpan.FromMinutes(2);
+
+    private string TicketNumber => KioskState.LastTicket is null
+        ? string.Empty
+        : KioskState.LastTicket.Id.ToString("N")[..8].ToUpperInvariant();
+
+    private string TicketSeatsText => KioskState.LastTicket is null
+        ? string.Empty
+        : string.Join(", ", KioskState.LastTicket.SeatNumbers);
+
+    protected override void OnInitialized()
+    {
+        if (KioskState.AiSessionId is not null)
+            AiListener.CommandReceived += OnAiCommandAsync;
+
+        _redirectCts = new CancellationTokenSource();
+        _ = StartAutoRedirectAsync(_redirectCts.Token);
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender || _purchasePersistStarted || KioskState.IsPurchasePersisted)
+            return;
+
+        if (KioskState.LastTicket is null)
+            return;
+
+        _purchasePersistStarted = true;
+        await PersistPurchaseAsync();
+    }
+
+    private async Task PersistPurchaseAsync()
+    {
+        try
+        {
+            if (KioskState.SessionToken.HasValue && KioskState.PreferredGenres.Count > 0)
+            {
+                await Http.PostAsJsonAsync(
+                    $"api/sessions/{KioskState.SessionToken.Value}/genres",
+                    new
+                    {
+                        genres = KioskState.PreferredGenres.ToList(),
+                        preferenceLevel = 8,
+                        replaceExisting = true
+                    });
+            }
+
+            var sessionId = KioskState.CurrentSessionId ?? KioskState.LastTicket!.SessionId;
+            var seatNumbers = KioskState.SelectedSeats.Count > 0
+                ? KioskState.SelectedSeats.ToList()
+                : KioskState.LastTicket!.SeatNumbers;
+
+            var request = new CreateTicketRequest
+            {
+                SessionId = sessionId,
+                SeatNumbers = seatNumbers,
+                KioskSessionId = KioskState.CurrentKioskSessionId,
+                ClientProfileId = KioskState.LastTicket!.ClientProfileId,
+                PhoneNumber = KioskState.ConfirmedPhoneNumber
+            };
+
+            var response = await Http.PostAsJsonAsync("api/tickets/book", request);
+            if (!response.IsSuccessStatusCode)
+            {
+                var error = await response.Content.ReadAsStringAsync();
+                Snackbar.Add($"Помилка збереження: {error}", Severity.Error);
+                return;
+            }
+
+            var ticket = await response.Content.ReadFromJsonAsync<TicketDto>();
+            if (ticket is not null)
+            {
+                KioskState.SetLastTicket(ticket);
+                KioskState.MarkPurchasePersisted();
+                await InvokeAsync(StateHasChanged);
+            }
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Помилка збереження: {ex.Message}", Severity.Error);
+        }
+    }
+
+    private async Task StartAutoRedirectAsync(CancellationToken ct)
+    {
+        try
+        {
+            for (var minute = 5; minute >= 1; minute--)
+            {
+                redirectMinutesLeft = minute;
+                await InvokeAsync(StateHasChanged);
+                await Task.Delay(TimeSpan.FromMinutes(1), ct);
+            }
+
+            await InvokeAsync(GoToHome);
+        }
+        catch (OperationCanceledException)
+        {
+        }
+    }
+
+    private async Task OnAiCommandAsync(AiCommandDto command)
+    {
+        if (command.Command != "print_ticket")
+            return;
+
+        await InvokeAsync(PrintTicket);
+    }
+
+    private string QrCodeUrl => KioskState.LastTicket == null
+        ? ""
+        : $"https://api.qrserver.com/v1/create-qr-code/?size=360x360&data={Uri.EscapeDataString(GetTicketUrl())}";
+
+    private string GetTicketUrl()
+    => $"{Nav.BaseUri.TrimEnd('/')}/api/tickets/{KioskState.LastTicket!.Id}/download";
+
+    private async Task PrintTicket()
+    {
+        if (KioskState.LastTicket is null)
+            return;
+
+        await JSRuntime.InvokeVoidAsync("window.print");
+    }
+
+    private void ShowQrCode()
+    {
+        showQrModal = true;
+        StartQrInactivityTimer();
+    }
+
+    private void CloseQrModal()
+    {
+        showQrModal = false;
+        StopQrInactivityTimer();
+    }
+
+    private void StartQrInactivityTimer()
+    {
+        StopQrInactivityTimer();
+        _qrInactivityCts = new CancellationTokenSource();
+        _ = EndSessionAfterQrInactivityAsync(_qrInactivityCts.Token);
+    }
+
+    private void StopQrInactivityTimer()
+    {
+        _qrInactivityCts?.Cancel();
+        _qrInactivityCts?.Dispose();
+        _qrInactivityCts = null;
+    }
+
+    private async Task EndSessionAfterQrInactivityAsync(CancellationToken ct)
+    {
+        try
+        {
+            await Task.Delay(QrInactivityTimeout, ct);
+            await InvokeAsync(GoToHome);
+        }
+        catch (OperationCanceledException)
+        {
+        }
+    }
+
+    private async Task GoToHome()
+    {
+        if (_navigatingHome)
+            return;
+
+        _navigatingHome = true;
+        _redirectCts?.Cancel();
+        StopQrInactivityTimer();
+
+        await KioskSessionCleanup.EndSessionAndReturnHomeAsync(
+            KioskState,
+            KioskStateService,
+            AiListener,
+            LiveKitInterop,
+            Http,
+            Nav);
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        _redirectCts?.Cancel();
+        _redirectCts?.Dispose();
+        StopQrInactivityTimer();
+        AiListener.CommandReceived -= OnAiCommandAsync;
+
+        await Task.CompletedTask;
+    }
+}

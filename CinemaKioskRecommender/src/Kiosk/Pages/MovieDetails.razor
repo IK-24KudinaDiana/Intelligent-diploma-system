@@ -1,0 +1,226 @@
+@page "/movie/{MovieId:guid}"
+@layout CinemaKioskRecommender.Kiosk.Layout.ShellLayout
+@using CinemaKioskRecommender.Application.DTOs
+@using CinemaKioskRecommender.Kiosk.Services
+@using CinemaKioskRecommender.Kiosk.Localization
+@using MudBlazor
+@implements IAsyncDisposable
+
+@inject HttpClient Http
+@inject NavigationManager Nav
+@inject KioskState State
+@inject KioskStateService KioskStateService
+@inject ISnackbar Snackbar
+@inject AiCommandListenerService AiListener
+@inject LiveKitInteropService LiveKitInterop
+
+<div class="kiosk-details">
+    @if (movie == null)
+    {
+        <MudProgressCircular Indeterminate="true" Size="Size.Large" />
+    }
+    else
+    {
+        <div class="kiosk-details-grid">
+            <div class="kiosk-details-poster">
+                <img src="@movie.PosterUrl" alt="@movie.Title" />
+            </div>
+
+            <div class="kiosk-details-panel">
+                <div class="kiosk-details-head">
+                    <div>
+                        <div class="kiosk-details-title">@movie.Title</div>
+                        <div class="kiosk-muted">@movie.ReleaseYear • @movie.DurationMinutes хв</div>
+                    </div>
+                </div>
+
+                <div class="kiosk-details-genres">
+                    @foreach (var genreName in movie.GenreNames)
+                    {
+                        <span class="kiosk-pill">@UiStrings.Genre(genreName)</span>
+                    }
+                </div>
+
+                <div class="kiosk-details-desc">@movie.Description</div>
+
+                <div class="kiosk-details-actions">
+                    <button class="kiosk-btn-secondary" @onclick="GoBack">@UiStrings.Back</button>
+                    <button class="kiosk-btn-secondary"
+                            disabled="@string.IsNullOrWhiteSpace(movie.TrailerUrl)"
+                            @onclick="ShowTrailerOverlay">
+                        ▶ Переглянути трейлер
+                    </button>
+                    <button class="kiosk-btn-primary" @onclick="GoToSessions">Доступні сеанси</button>
+                </div>
+            </div>
+        </div>
+    }
+</div>
+@if (showTrailerOverlay && movie != null)
+{
+    <div class="qr-full-overlay"
+         @onmousemove="RegisterTrailerQrActivity"
+         @onpointerdown="RegisterTrailerQrActivity"
+         @ontouchstart="RegisterTrailerQrActivity"
+         @onkeydown="RegisterTrailerQrActivity"
+         tabindex="0">
+        <div class="qr-modal-box">
+            <div class="qr-modal-header">
+                <MudText Typo="Typo.h5">@movie.Title</MudText>
+                <button class="qr-close-btn" @onclick="CloseTrailerOverlay">✕</button>
+            </div>
+
+            <div class="qr-big-container">
+                <img src="@QrCodeUrl" alt="QR Code" class="qr-big" />
+            </div>
+
+            <div class="qr-session-info">
+                Сесія автоматично завершиться через @TrailerQrRemainingText бездії.
+            </div>
+
+            <div class="qr-hint-text">
+                Наведи камеру телефону на QR-код,<br />
+                щоб відкрити трейлер на YouTube
+            </div>
+
+            <button class="kiosk-btn-secondary mt-4" @onclick="CloseTrailerOverlay">
+                Закрити
+            </button>
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter] public Guid MovieId { get; set; }
+    private MovieDto? movie;
+    private bool showTrailerOverlay = false;
+    private bool _navigatingHome;
+    private DateTime _trailerQrLastActivityUtc;
+    private TimeSpan _trailerQrRemaining = TrailerQrInactivityTimeout;
+    private CancellationTokenSource? _trailerQrInactivityCts;
+    private static readonly TimeSpan TrailerQrInactivityTimeout = TimeSpan.FromMinutes(1);
+
+    private string QrCodeUrl => movie?.TrailerUrl == null ? "" :
+        $"https://api.qrserver.com/v1/create-qr-code/?size=360x360&data={Uri.EscapeDataString(movie.TrailerUrl)}";
+
+    private string TrailerQrRemainingText =>
+        $"{(int)_trailerQrRemaining.TotalMinutes}:{_trailerQrRemaining.Seconds:00}";
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            movie = await Http.GetFromJsonAsync<MovieDto>($"api/movies/{MovieId}");
+            if (movie != null)
+                State.SelectMovie(movie);
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Помилка: {ex.Message}");
+        }
+    }
+
+    private void GoBack()
+    {
+        StopTrailerQrInactivityTimer();
+        Nav.NavigateTo("/recommendations");
+    }
+
+    private void GoToSessions()
+    {
+        StopTrailerQrInactivityTimer();
+        if (movie != null) State.SelectMovie(movie);
+        Nav.NavigateTo($"/sessions/{MovieId}");
+    }
+
+    private void ShowTrailerOverlay()
+    {
+        if (string.IsNullOrWhiteSpace(movie?.TrailerUrl))
+        {
+            KioskToast.Show(Snackbar, "Трейлер недоступний", Severity.Warning);
+            return;
+        }
+        showTrailerOverlay = true;
+        StartTrailerQrInactivityTimer();
+    }
+
+    private void CloseTrailerOverlay()
+    {
+        showTrailerOverlay = false;
+        StopTrailerQrInactivityTimer();
+    }
+
+    private void StartTrailerQrInactivityTimer()
+    {
+        StopTrailerQrInactivityTimer();
+        _trailerQrLastActivityUtc = DateTime.UtcNow;
+        _trailerQrRemaining = TrailerQrInactivityTimeout;
+        _trailerQrInactivityCts = new CancellationTokenSource();
+        _ = EndSessionAfterTrailerQrInactivityAsync(_trailerQrInactivityCts.Token);
+    }
+
+    private void RegisterTrailerQrActivity()
+    {
+        if (!showTrailerOverlay || _navigatingHome)
+            return;
+
+        _trailerQrLastActivityUtc = DateTime.UtcNow;
+        _trailerQrRemaining = TrailerQrInactivityTimeout;
+    }
+
+    private void StopTrailerQrInactivityTimer()
+    {
+        _trailerQrInactivityCts?.Cancel();
+        _trailerQrInactivityCts?.Dispose();
+        _trailerQrInactivityCts = null;
+    }
+
+    private async Task EndSessionAfterTrailerQrInactivityAsync(CancellationToken ct)
+    {
+        try
+        {
+            while (!ct.IsCancellationRequested)
+            {
+                await Task.Delay(TimeSpan.FromSeconds(1), ct);
+
+                var inactiveFor = DateTime.UtcNow - _trailerQrLastActivityUtc;
+                var remaining = TrailerQrInactivityTimeout - inactiveFor;
+
+                if (remaining <= TimeSpan.Zero)
+                {
+                    await InvokeAsync(EndSessionAndReturnHomeAsync);
+                    return;
+                }
+
+                _trailerQrRemaining = remaining;
+                await InvokeAsync(StateHasChanged);
+            }
+        }
+        catch (OperationCanceledException)
+        {
+        }
+    }
+
+    private async Task EndSessionAndReturnHomeAsync()
+    {
+        if (_navigatingHome)
+            return;
+
+        _navigatingHome = true;
+        StopTrailerQrInactivityTimer();
+
+        await KioskSessionCleanup.EndSessionAndReturnHomeAsync(
+            State,
+            KioskStateService,
+            AiListener,
+            LiveKitInterop,
+            Http,
+            Nav);
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        StopTrailerQrInactivityTimer();
+        await Task.CompletedTask;
+    }
+}

@@ -1,0 +1,130 @@
+@page "/genres"
+@layout CinemaKioskRecommender.Kiosk.Layout.ShellLayout
+@implements IDisposable
+@using CinemaKioskRecommender.Application.DTOs
+@using CinemaKioskRecommender.Kiosk.Services
+@using CinemaKioskRecommender.Kiosk.Localization
+@using MudBlazor
+@inject NavigationManager Nav
+@inject KioskState State
+@inject HttpClient Http
+@inject LiveKitInteropService LiveKitInterop
+@inject ILogger<GenreSelection> Logger
+
+<div class="kiosk-genres-page">
+    <div class="kiosk-genres-bg-grid"></div>
+    <div class="kiosk-genres-orb kiosk-genres-orb-1"></div>
+    <div class="kiosk-genres-orb kiosk-genres-orb-2"></div>
+
+    <div class="kiosk-genres-inner">
+        <div class="kiosk-section-header kiosk-genres-header">
+            <div>
+                <MudText Typo="Typo.h3" Class="mb-1 font-weight-bold">Виберіть жанри</MudText>
+                <MudText Typo="Typo.body1" Class="kiosk-muted">
+                    Це допоможе AI підібрати точніші рекомендації
+                </MudText>
+            </div>
+            <button class="kiosk-btn-secondary kiosk-header-action" @onclick="GoBack">@UiStrings.Back</button>
+        </div>
+
+        <div class="kiosk-genres-card">
+            <div class="kiosk-genres-grid">
+                @foreach (var g in UiStrings.GenreKeys)
+                {
+                    var isActive = selected.Contains(g);
+                    <button class="kiosk-genre-pill @(isActive ? "active" : "")"
+                            @onclick="() => Toggle(g)">
+                        @UiStrings.Genre(g)
+                    </button>
+                }
+            </div>
+
+            <div class="kiosk-genres-footer">
+                <div class="selected-info">
+                    <div class="kiosk-muted">@UiStrings.Selected</div>
+                    <div class="kiosk-genres-picked">
+                        @(selected.Count == 0 ? "—" : string.Join(", ", selected.Select(UiStrings.Genre)))
+                    </div>
+                </div>
+
+                <button class="kiosk-btn-primary"
+                        disabled="@(selected.Count == 0)"
+                        @onclick="Continue">
+                    @UiStrings.Continue
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+@code {
+    private readonly HashSet<string> selected = new(StringComparer.OrdinalIgnoreCase);
+
+    protected override void OnInitialized()
+    {
+        SyncFromState();
+        State.OnChange += OnStateChanged;
+    }
+
+    private void OnStateChanged()
+    {
+        SyncFromState();
+        InvokeAsync(StateHasChanged);
+    }
+
+    private void SyncFromState()
+    {
+        selected.Clear();
+        foreach (var g in State.PreferredGenres)
+            selected.Add(g);
+    }
+
+    private void Toggle(string genre)
+    {
+        if (!selected.Add(genre))
+            selected.Remove(genre);
+    }
+
+    private async Task Continue()
+    {
+        var genres = selected.ToList();
+        State.SetPreferredGenres(genres);
+
+        if (State.SessionToken.HasValue)
+        {
+            try
+            {
+                await Http.PostAsJsonAsync(
+                    $"api/sessions/{State.SessionToken.Value}/genres",
+                    new { genres, preferenceLevel = 8, replaceExisting = true });
+            }
+            catch (Exception ex)
+            {
+                Logger.LogWarning(ex, "Failed to persist genre preferences");
+            }
+        }
+
+        Nav.NavigateTo("/recommendations");
+    }
+
+    private void GoBack() => Nav.NavigateTo("/");
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender || State.AiSessionId is null) return;
+
+        try
+        {
+            await LiveKitInterop.ConnectAsync(State.AiSessionId.Value);
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "LiveKit connection failed");
+        }
+    }
+
+    public void Dispose()
+    {
+        State.OnChange -= OnStateChanged;
+    }
+}

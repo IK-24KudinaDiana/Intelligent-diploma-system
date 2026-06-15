@@ -1,0 +1,60 @@
+@inherits LayoutComponentBase
+@implements IAsyncDisposable
+@using CinemaKioskRecommender.Kiosk.Services
+@using MudBlazor
+@inject KioskState State
+@inject AiCommandListenerService AiListener
+
+<div class="kiosk-shell">
+    <header class="kiosk-topbar">
+        <div class="kiosk-topbar-left">
+            <div class="d-flex align-center gap-3">
+                <MudImage Src="/images/logo-icon.png" Width="52" Height="52" />
+                <div class="kiosk-brand-text">
+                    <div class="kiosk-brand-name">CINEMIND AI</div>
+                    <div class="kiosk-brand-sub">Кіоск кінотеатру</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="kiosk-topbar-right">
+            <div class="kiosk-time-chip">
+                <span class="kiosk-time-value">@currentTime.ToString("HH:mm")</span>
+            </div>
+        </div>
+    </header>
+
+    <main class="kiosk-main">
+        <section class="kiosk-content">
+            @Body
+        </section>
+    </main>
+
+</div>
+
+@code {
+    private DateTime currentTime = DateTime.Now;
+    private System.Timers.Timer? clockTimer;
+
+    protected override void OnInitialized()
+    {
+        if (State.AiSessionId is not null)
+            AiListener.EnsureStarted();
+
+        clockTimer = new System.Timers.Timer(1000);
+        clockTimer.Elapsed += async (_, _) =>
+        {
+            currentTime = DateTime.Now;
+            await InvokeAsync(StateHasChanged);
+        };
+        clockTimer.Start();
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        clockTimer?.Stop();
+        clockTimer?.Dispose();
+        AiListener.Stop();
+        await Task.CompletedTask;
+    }
+}

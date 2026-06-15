@@ -1,0 +1,618 @@
+@page "/payment/{SessionId:guid}"
+@layout CinemaKioskRecommender.Kiosk.Layout.ShellLayout
+
+@using CinemaKioskRecommender.Application.DTOs
+@using CinemaKioskRecommender.Kiosk.Services
+@using MudBlazor
+@implements IAsyncDisposable
+@inject AiCommandListenerService AiListener
+
+@inject HttpClient Http
+@inject NavigationManager Nav
+@inject KioskState State
+@inject ISnackbar Snackbar
+
+<div class="payment-screen">
+
+    <div class="payment-wrapper">
+        <div class="payment-header">
+
+            <h1 class="payment-title">
+                Оформлення квитка
+            </h1>
+
+            <div class="payment-movie">
+                @State.CurrentMovieTitle
+            </div>
+
+        </div>
+        <div class="payment-card">
+            <div class="payment-card-top">
+
+                <div>
+                    <div class="payment-label">
+                        Зал та сеанс
+                    </div>
+
+                    <div class="payment-session">
+                        @State.CurrentHallName
+                    </div>
+
+                    <div class="payment-session-time">
+                        @State.CurrentSessionTime?.ToString("dd MMMM yyyy • HH:mm")
+                    </div>
+                </div>
+
+                <div class="tickets-chip">
+                    @State.SelectedSeats.Count квитків
+                </div>
+
+            </div>
+
+            <div class="payment-divider"></div>
+            <div class="payment-seats-block">
+
+                <div class="payment-seats-title">
+                    Вибрані місця:
+                </div>
+
+                <div class="payment-seats">
+                    @string.Join(", ", State.SelectedSeats)
+                </div>
+
+            </div>
+            <div class="payment-price-box">
+
+                <div>
+                    <div class="payment-label">
+                        До сплати
+                    </div>
+
+                    <div class="payment-price">
+                        @State.TotalPrice грн
+                    </div>
+                </div>
+
+            </div>
+
+        </div>
+        <div class="payment-actions">
+
+            <button class="payment-btn-secondary"
+                    @onclick="GoBack">
+                ← Назад
+            </button>
+
+            <button class="payment-btn-primary"
+                    @onclick="HandlePayClick"
+                    disabled="@(isProcessing || (showPhoneInput && !isPhoneConfirmed))">
+
+                @if (isProcessing)
+                {
+                    <MudProgressCircular Size="Size.Small"
+                                         Indeterminate="true"
+                                         Class="mr-3" />
+
+                    <span>Обробка платежу...</span>
+                }
+                else if (showPhoneInput && !isPhoneConfirmed)
+                {
+                    <span>Підтвердіть номер телефону</span>
+                }
+                else
+                {
+                    <span>Оплатити та отримати квиток</span>
+                }
+
+            </button>
+
+        </div>
+        @if (showPhoneInput)
+        {
+            <div class="phone-appear">
+
+                <div class="phone-card">
+
+                    <div class="phone-title">
+                        Номер телефону
+                    </div>
+
+                    <div class="phone-subtitle">
+                        Для фіксації та отримання квитка
+                    </div>
+
+                    <MudTextField T="string"
+                                  @bind-Value="phoneNumber"
+                                  Placeholder="+38 (0XX) XXX-XX-XX"
+                                  Variant="Variant.Outlined"
+                                  Class="phone-input"
+                                  Immediate="true"
+                                  InputMode="InputMode.tel"
+                                  OnBlur="FormatPhoneNumber" />
+
+                    <MudButton Class="confirm-phone-btn"
+                               OnClick="ConfirmPhoneNumber"
+                               Disabled="@(!IsPhoneValid())"
+                               FullWidth="true">
+
+                        Підтвердити номер телефону
+
+                    </MudButton>
+                    @if (isPhoneConfirmed)
+                    {
+                        <div class="phone-success-message">
+                            <span class="success-icon">✓</span>
+                            Номер телефону успішно підтверджено
+                        </div>
+                    }
+
+                </div>
+
+            </div>
+        }
+
+    </div>
+
+</div>
+
+<style>
+
+    .payment-screen {
+        width: 100%;
+        min-height: 100%;
+        padding: clamp(32px, 4vw, 60px) clamp(20px, 3.2vw, 64px);
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        position: relative;
+        overflow: auto;
+        background: transparent;
+    }
+
+        .payment-screen::before {
+            display: none;
+        }
+
+    .payment-wrapper {
+        width: min(820px, 100%);
+        position: relative;
+        z-index: 2;
+    }
+
+    .payment-header {
+        text-align: center;
+        margin-bottom: 42px;
+    }
+
+    .payment-title {
+        margin: 0;
+        color: white;
+        font-size: 54px;
+        font-weight: 800;
+        letter-spacing: -1.5px;
+    }
+
+    .payment-movie {
+        margin-top: 14px;
+        color: rgba(255,255,255,.68);
+        font-size: 24px;
+        font-weight: 500;
+    }
+
+    .payment-card {
+        position: relative;
+        padding: 38px;
+        border-radius: 34px;
+        background: linear-gradient( 180deg, rgba(17,22,35,.88), rgba(10,13,20,.92));
+        border: 1px solid rgba(255,255,255,.08);
+        box-shadow: 0 20px 80px rgba(0,0,0,.55), inset 0 1px 0 rgba(255,255,255,.05);
+        backdrop-filter: blur(24px);
+    }
+
+        .payment-card::before {
+            content: '';
+            position: absolute;
+            inset: 0;
+            border-radius: 34px;
+            background: linear-gradient( 135deg, rgba(92,124,255,.08), rgba(168,85,247,.05), transparent);
+            pointer-events: none;
+        }
+
+    .payment-card-top {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        gap: 20px;
+    }
+
+    .payment-label {
+        color: rgba(255,255,255,.45);
+        font-size: 13px;
+        text-transform: uppercase;
+        letter-spacing: 1px;
+    }
+
+    .payment-session {
+        margin-top: 10px;
+        color: white;
+        font-size: 28px;
+        font-weight: 700;
+    }
+
+    .payment-session-time {
+        margin-top: 6px;
+        color: rgba(255,255,255,.65);
+        font-size: 18px;
+    }
+
+    .tickets-chip {
+        padding: 12px 18px;
+        border-radius: 999px;
+        background: rgba(90,120,255,.12);
+        border: 1px solid rgba(90,120,255,.24);
+        color: #7db4ff;
+        font-size: 15px;
+        font-weight: 700;
+    }
+
+    .payment-divider {
+        height: 1px;
+        background: rgba(255,255,255,.08);
+        margin: 34px 0;
+    }
+
+    .payment-seats-block {
+        margin-bottom: 38px;
+    }
+
+    .payment-seats-title {
+        color: rgba(255,255,255,.75);
+        font-size: 24px;
+        font-weight: 600;
+    }
+
+    .payment-seats {
+        margin-top: 18px;
+        color: white;
+        font-size: 42px;
+        font-weight: 800;
+        letter-spacing: 2px;
+    }
+
+    .payment-price-box {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 28px;
+        border-radius: 24px;
+        background: linear-gradient( 180deg, rgba(255,255,255,.03), rgba(255,255,255,.015));
+        border: 1px solid rgba(255,255,255,.05);
+    }
+
+    .payment-price {
+        margin-top: 10px;
+        color: #37ffb1;
+        font-size: 48px;
+        font-weight: 800;
+        letter-spacing: -1px;
+        text-shadow: 0 0 20px rgba(55,255,177,.25);
+    }
+
+    .payment-actions {
+        margin-top: 28px;
+        display: flex;
+        flex-direction: column;
+        gap: 18px;
+    }
+
+    .payment-btn-secondary,
+    .payment-btn-primary {
+        width: 100%;
+        height: 78px;
+        border-radius: 24px;
+        font-size: 22px;
+        font-weight: 700;
+        transition: .25s ease;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        cursor: pointer;
+    }
+
+    .payment-btn-secondary {
+        background: transparent;
+        color: white;
+        border: 2px solid rgba(255,255,255,.14);
+        backdrop-filter: blur(10px);
+    }
+
+        .payment-btn-secondary:hover {
+            background: rgba(255,255,255,.04);
+            transform: translateY(-2px);
+        }
+
+    .payment-btn-primary {
+        border: none;
+        color: white;
+        background: linear-gradient( 135deg, #4f8cff 0%, #7c4dff 100%);
+        box-shadow: 0 14px 40px rgba(91,124,255,.35);
+    }
+
+        .payment-btn-primary:hover {
+            transform: translateY(-2px) scale(1.01);
+        }
+
+        .payment-btn-primary:disabled {
+            opacity: .7;
+        }
+
+    .phone-appear {
+        animation: fadeUp .35s ease;
+    }
+
+    .phone-card {
+        margin-top: 24px;
+        padding: 28px;
+        border-radius: 28px;
+        background: linear-gradient( 180deg, rgba(15,20,32,.92), rgba(9,12,18,.92));
+        border: 1px solid rgba(255,255,255,.08);
+        backdrop-filter: blur(24px);
+    }
+
+    .phone-title {
+        color: white;
+        font-size: 24px;
+        font-weight: 700;
+    }
+
+    .phone-subtitle {
+        margin-top: 8px;
+        color: rgba(255,255,255,.62);
+        font-size: 16px;
+    }
+
+    .phone-input {
+        margin-top: 22px;
+    }
+
+        .phone-input .mud-input-slot {
+            font-size: 22px !important;
+            color: white !important;
+        }
+
+        .phone-input .mud-input-root {
+            background: rgba(255,255,255,.03);
+            border-radius: 18px;
+        }
+
+    .confirm-phone-btn {
+        width: 100%;
+        height: 72px;
+        margin-top: 22px;
+        border: none;
+        border-radius: 22px;
+        background: linear-gradient( 135deg, #00d26a, #18f08b);
+        color: #03140c;
+        font-size: 20px;
+        font-weight: 800;
+        cursor: pointer;
+        transition: .25s ease;
+        box-shadow: 0 14px 40px rgba(24,240,139,.22);
+    }
+
+        .confirm-phone-btn:hover {
+            transform: translateY(-2px);
+        }
+
+        .confirm-phone-btn:disabled {
+            opacity: .55;
+            cursor: not-allowed;
+        }
+
+    @@keyframes fadeUp {
+        from {
+            opacity: 0;
+            transform: translateY(20px);
+        }
+
+        to {
+            opacity: 1;
+            transform: translateY(0);
+        }
+    }
+
+    @@media(max-width:768px) {
+
+        .payment-title {
+            font-size: 40px;
+        }
+
+        .payment-movie {
+            font-size: 20px;
+        }
+
+        .payment-card {
+            padding: 26px;
+        }
+
+        .payment-card-top {
+            flex-direction: column;
+        }
+
+        .payment-seats {
+            font-size: 30px;
+        }
+
+        .payment-price {
+            font-size: 38px;
+        }
+
+        .payment-btn-secondary,
+        .payment-btn-primary {
+            height: 70px;
+            font-size: 18px;
+        }
+    }
+
+</style>
+
+@code {
+
+    [Parameter] public Guid SessionId { get; set; }
+
+    [Parameter] public bool TestMode { get; set; } = true;
+
+    private bool showPhoneInput = false;
+    private bool isPhoneConfirmed = false;
+    private bool isProcessing = false;
+
+    private string phoneNumber = "";
+
+    [Inject] private ILogger<Payment>? Logger { get; set; }
+
+    protected override void OnInitialized()
+    {
+        if (!State.SelectedSeats.Any())
+            Nav.NavigateTo($"/seats/{SessionId}");
+
+        if (State.AiSessionId is not null)
+        {
+            AiListener.CommandReceived += OnAiCommandAsync;
+            showPhoneInput = true;
+        }
+    }
+
+    private async Task OnAiCommandAsync(AiCommandDto command)
+    {
+        switch (command.Command)
+        {
+            case "set_phone_number":
+            {
+                phoneNumber = AiPayloadHelper.GetString(command.Payload, "phone") ?? "";
+                showPhoneInput = true;
+                FormatPhoneNumber(new FocusEventArgs());
+                isPhoneConfirmed = IsPhoneValid();
+                await InvokeAsync(StateHasChanged);
+                break;
+            }
+            case "confirm_purchase":
+                showPhoneInput = true;
+                FormatPhoneNumber(new FocusEventArgs());
+                isPhoneConfirmed = IsPhoneValid();
+
+                if (isPhoneConfirmed && !isProcessing)
+                    await ConfirmBooking();
+                break;
+        }
+    }
+
+    private void FormatPhoneNumber(FocusEventArgs args)
+    {
+        if (string.IsNullOrWhiteSpace(phoneNumber))
+            return;
+
+        var digits = new string(phoneNumber.Where(char.IsDigit).ToArray());
+
+        if (digits.StartsWith("38"))
+            digits = digits.Substring(2);
+
+        if (digits.Length > 10)
+            digits = digits.Substring(0, 10);
+
+        if (digits.Length == 10)
+        {
+            phoneNumber =
+                $"+38 ({digits.Substring(0, 3)}) " +
+                $"{digits.Substring(3, 3)}-" +
+                $"{digits.Substring(6, 2)}-" +
+                $"{digits.Substring(8, 2)}";
+        }
+    }
+
+    private async Task HandlePayClick()
+    {
+        if (!showPhoneInput)
+        {
+            showPhoneInput = true;
+            isPhoneConfirmed = false;
+            StateHasChanged();
+            return;
+        }
+
+        if (isPhoneConfirmed)
+        {
+            await ConfirmBooking();
+        }
+    }
+
+    private bool IsPhoneValid()
+    {
+        var digits = new string(phoneNumber.Where(char.IsDigit).ToArray());
+        if (digits.StartsWith("0") && digits.Length == 10)
+            digits = "38" + digits;
+
+        return digits.Length == 12 && digits.StartsWith("380");
+    }
+
+    private void ConfirmPhoneNumber()
+    {
+        if (!IsPhoneValid())
+        {
+            KioskToast.Show(Snackbar, "Введіть коректний номер телефону", Severity.Warning);
+            return;
+        }
+
+        isPhoneConfirmed = true;
+
+        StateHasChanged();
+    }
+
+    private async Task ConfirmBooking()
+    {
+        isProcessing = true;
+        StateHasChanged();
+
+        try
+        {
+            if (TestMode)
+                await Task.Delay(1500);
+
+            State.SetConfirmedPhoneNumber(phoneNumber);
+
+            var previewTicket = new TicketDto
+            {
+                Id = Guid.NewGuid(),
+                SessionId = SessionId,
+                MovieTitle = State.CurrentMovieTitle,
+                HallName = State.CurrentHallName,
+                SessionStartTime = State.CurrentSessionTime ?? DateTime.UtcNow,
+                SeatNumbers = State.SelectedSeats.ToList(),
+                TotalPrice = State.TotalPrice,
+                PurchasedAt = DateTime.UtcNow
+            };
+
+            State.SetLastTicket(previewTicket);
+            Nav.NavigateTo("/success");
+        }
+        finally
+        {
+            isProcessing = false;
+            StateHasChanged();
+        }
+    }
+
+    private void GoBack()
+    {
+        showPhoneInput = false;
+        isPhoneConfirmed = false;
+        phoneNumber = "";
+
+        Nav.NavigateTo($"/seats/{SessionId}");
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        AiListener.CommandReceived -= OnAiCommandAsync;
+        await Task.CompletedTask;
+    }
+}

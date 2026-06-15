@@ -1,0 +1,383 @@
+@page "/"
+@layout MainLayout
+@implements IDisposable
+
+@using CinemaKioskRecommender.Kiosk.Services
+@using MudBlazor
+
+@inject NavigationManager NavigationManager
+@inject HttpClient Http
+@inject KioskStateService KioskStateService
+@inject KioskState KioskState
+
+<MudContainer MaxWidth="MaxWidth.False"
+              Class="home-page pa-0 ma-0">
+
+    <div class="grid-bg"></div>
+    <div class="orb orb-1"></div>
+    <div class="orb orb-2"></div>
+
+    <header class="home-header">
+
+        <div class="brand">
+            <MudIcon Icon="@Icons.Material.Filled.SmartToy"
+                     Class="brand-icon" />
+
+            <span class="brand-text">
+                CINEMIND AI
+            </span>
+        </div>
+
+        <div class="kiosk-time-chip">
+            <span class="kiosk-time-value">@currentTime.ToString("HH:mm")</span>
+        </div>
+
+    </header>
+
+    <section class="hero-section">
+
+        <MudText Typo="Typo.subtitle1"
+                 Class="hero-label">
+            ЛАСКАВО ПРОСИМО ДО
+        </MudText>
+
+        <h1 class="hero-title">
+            CINEMIND AI
+        </h1>
+
+        <MudText Typo="Typo.h5"
+                 Class="hero-description">
+            Твій персональний кіноексперт
+            <br />
+            у світі великого екрану
+        </MudText>
+
+        <div class="feature-cards">
+
+            <MudPaper Class="mode-card"
+                      Elevation="0"
+                      @onclick="StartManualMode">
+
+                <div class="mode-icon">
+                    <MudIcon Icon="@Icons.Material.Filled.TouchApp" />
+                </div>
+
+                <div class="mode-title">
+                    Ручний режим
+                </div>
+
+                <div class="mode-subtitle">
+                    Самостійний вибір фільмів
+                </div>
+
+            </MudPaper>
+
+            <MudPaper Class="mode-card ai-card"
+                      Elevation="0"
+                      @onclick="StartAIMode">
+
+                <div class="mode-icon ai">
+                    <MudIcon Icon="@Icons.Material.Filled.Psychology" />
+                </div>
+
+                <div class="mode-title">
+                    AI режим
+                </div>
+
+                <div class="mode-subtitle">
+                    Персональні рекомендації
+                </div>
+
+            </MudPaper>
+
+        </div>
+
+    </section>
+
+</MudContainer>
+
+<style>
+    .home-page {
+        width: 100vw;
+        height: 100vh;
+        min-height: 100dvh;
+        position: relative;
+        overflow: hidden;
+        background: #050816;
+        display: flex;
+        flex-direction: column;
+    }
+    .grid-bg {
+        position: absolute;
+        inset: 0;
+        background-image:
+                linear-gradient(rgba(75,120,255,.08) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(75,120,255,.08) 1px, transparent 1px);
+        background-size: 50px 50px;
+        pointer-events: none;
+    }
+    .orb {
+        position: absolute;
+        border-radius: 50%;
+        filter: blur(120px);
+    }
+
+    .orb-1 {
+        width: 400px;
+        height: 400px;
+        background: rgba(0,255,180,.15);
+        top: -100px;
+        left: -100px;
+    }
+
+    .orb-2 {
+        width: 500px;
+        height: 500px;
+        background: rgba(124,92,255,.18);
+        bottom: -150px;
+        right: -100px;
+    }
+    .home-header {
+        position: relative;
+        z-index: 2;
+        width: 100%;
+        box-sizing: border-box;
+
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+
+        padding: 32px 48px;
+    }
+
+    .brand {
+        display: flex;
+        align-items: center;
+        gap: 14px;
+    }
+
+    .brand-icon {
+        font-size: 40px !important;
+        color: #00f5b4;
+    }
+
+    .brand-text {
+        font-size: 1.2rem;
+        font-weight: 700;
+        letter-spacing: 3px;
+        color: white;
+    }
+    .hero-section {
+        position: relative;
+        z-index: 2;
+
+        flex: 1;
+        width: 100%;
+        min-height: 0;
+
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        align-items: center;
+
+        text-align: center;
+
+        padding: 40px;
+    }
+
+    .hero-label {
+        color: #00f5b4;
+        letter-spacing: 6px;
+        font-weight: 700;
+        margin-bottom: 20px;
+    }
+
+    .hero-title {
+        font-size: clamp(5rem, 10vw, 8rem);
+        font-weight: 900;
+        line-height: 1;
+
+        margin: 0;
+
+        background: linear-gradient(
+                90deg,
+                #4a9fff,
+                #7c5cff,
+                #ff69d1
+        );
+
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+
+        text-shadow:
+                0 0 30px rgba(74,159,255,.35),
+                0 0 60px rgba(124,92,255,.25);
+    }
+
+    .hero-description {
+        color: rgba(255,255,255,.75);
+        margin-top: 24px !important;
+        max-width: 700px;
+    }
+    .feature-cards {
+        display: flex;
+        gap: 30px;
+
+        margin-top: 80px;
+    }
+
+    .mode-card {
+        width: 280px;
+        height: 190px;
+
+        cursor: pointer;
+
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        align-items: center;
+
+        border-radius: 28px;
+
+        background: rgba(255,255,255,.06) !important;
+        border: 1px solid rgba(255,255,255,.08);
+
+        backdrop-filter: blur(20px);
+
+        transition: .35s ease;
+    }
+
+    .mode-card:hover {
+        transform: translateY(-8px);
+
+        border-color: rgba(0,245,180,.35);
+
+        box-shadow:
+                0 0 40px rgba(0,245,180,.18),
+                0 20px 40px rgba(0,0,0,.4);
+    }
+
+    .mode-icon {
+        width: 72px;
+        height: 72px;
+
+        border-radius: 20px;
+
+        display: flex;
+        justify-content: center;
+        align-items: center;
+
+        background: rgba(0,245,180,.12);
+
+        color: #00f5b4;
+        font-size: 34px;
+    }
+
+    .mode-icon.ai {
+        background: rgba(124,92,255,.15);
+        color: #9d7cff;
+    }
+
+    .mode-title {
+        margin-top: 20px;
+
+        color: white;
+        font-size: 1.25rem;
+        font-weight: 700;
+    }
+
+    .mode-subtitle {
+        margin-top: 8px;
+
+        color: rgba(255,255,255,.55);
+        font-size: .9rem;
+    }
+
+    .ai-card:hover {
+        border-color: rgba(124,92,255,.4);
+
+        box-shadow:
+                0 0 45px rgba(124,92,255,.25),
+                0 20px 40px rgba(0,0,0,.4);
+    }
+
+    @@media (max-width: 900px) {
+        .home-header {
+            padding: 24px;
+        }
+
+        .feature-cards {
+            width: 100%;
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 18px;
+            margin-top: 48px;
+        }
+
+        .mode-card {
+            width: 100%;
+        }
+    }
+
+    @@media (max-width: 640px) {
+        .home-header {
+            align-items: flex-start;
+            flex-direction: column;
+            gap: 16px;
+        }
+
+        .hero-section {
+            justify-content: flex-start;
+            padding: 28px 20px 36px;
+            overflow-y: auto;
+        }
+
+        .hero-title {
+            font-size: clamp(3.2rem, 16vw, 5rem);
+        }
+
+        .feature-cards {
+            grid-template-columns: 1fr;
+        }
+    }
+</style>
+
+@code {
+    private DateTime currentTime = DateTime.Now;
+    private System.Timers.Timer? timer;
+
+    protected override void OnInitialized()
+    {
+        timer = new System.Timers.Timer(1000);
+        timer.Elapsed += async (_, _) =>
+        {
+            try
+            {
+                currentTime = DateTime.Now;
+                await InvokeAsync(StateHasChanged);
+            }
+            catch { }
+        };
+        timer.Start();
+    }
+
+    private async Task StartManualMode()
+    {
+        await KioskState.StartNewSessionAsync("Kiosk-01", Http);
+        NavigationManager.NavigateTo("/genres");
+    }
+
+    private async Task StartAIMode()
+    {
+        await KioskState.StartNewSessionAsync("Kiosk-01", Http);
+        KioskStateService.StartAiSession();
+        KioskState.SetAiSession(KioskStateService.CurrentSession.SessionId);
+        NavigationManager.NavigateTo("/genres");
+    }
+
+    public void Dispose()
+    {
+        timer?.Stop();
+        timer?.Dispose();
+    }
+}

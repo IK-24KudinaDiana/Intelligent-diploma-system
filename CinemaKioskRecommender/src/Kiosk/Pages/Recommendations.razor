@@ -1,0 +1,301 @@
+@page "/recommendations"
+@layout CinemaKioskRecommender.Kiosk.Layout.ShellLayout
+@implements IAsyncDisposable
+@using CinemaKioskRecommender.Application.DTOs
+@using CinemaKioskRecommender.Kiosk.Services
+@using CinemaKioskRecommender.Kiosk.Localization
+@using Microsoft.Extensions.Logging
+@using MudBlazor
+@inject HttpClient Http
+@inject NavigationManager Nav
+@inject KioskState State
+@inject ISnackbar Snackbar
+@inject AiCommandListenerService AiListener
+@inject IJSRuntime JS
+
+<div class="kiosk-recommendations-page">
+    <div class="kiosk-recommendations-bg-grid"></div>
+    <div class="kiosk-recommendations-orb kiosk-recommendations-orb-1"></div>
+    <div class="kiosk-recommendations-orb kiosk-recommendations-orb-2"></div>
+
+    <div class="kiosk-recommendations-inner">
+        <div class="kiosk-section-header kiosk-recommendations-header">
+            <div>
+                <MudText Typo="Typo.h4" Class="mb-1">Рекомендовано для вас</MudText>
+                <MudText Typo="Typo.body2" Class="kiosk-muted">Підбір за обраними жанрами</MudText>
+            </div>
+
+            <div class="kiosk-chips">
+                @foreach (var chip in UiStrings.RecommendationTabs)
+                {
+                    <button class="kiosk-chip @(ActiveChip == chip ? "active" : "")" @onclick="() => SetChip(chip)">
+                        @chip
+                    </button>
+                }
+            </div>
+        </div>
+
+        @if (isLoading)
+        {
+            <MudProgressCircular Indeterminate="true" Size="Size.Large" />
+        }
+        else if (!string.IsNullOrWhiteSpace(loadError))
+        {
+            <MudText Class="kiosk-muted">@loadError</MudText>
+        }
+        else if (DisplayedMovies.Count == 0)
+        {
+            <MudText Class="kiosk-muted">Немає доступних фільмів.</MudText>
+        }
+        else
+        {
+            <div class="kiosk-movie-grid">
+                @foreach (var movie in DisplayedMovies)
+                {
+                    <div class="kiosk-movie-card" @onclick="() => OnMovieClick(movie)">
+                        <div class="kiosk-movie-poster">
+                            <img src="@movie.PosterUrl" alt="@movie.Title" />
+                            <div class="kiosk-movie-badge">AI</div>
+                            <div class="kiosk-movie-gradient"></div>
+                        </div>
+                        <div class="kiosk-movie-meta">
+                            <div class="kiosk-movie-title">@movie.Title</div>
+                            <div class="kiosk-movie-sub kiosk-muted">@movie.ReleaseYear • @movie.DurationMinutes хв</div>
+                            <div class="kiosk-movie-genres">
+                                @foreach (var genreName in movie.GenreNames.Take(3))
+                                {
+                                    <span class="kiosk-pill">@UiStrings.Genre(genreName)</span>
+                                }
+                            </div>
+                            <div class="kiosk-movie-actions">
+                                @if (State.AiSessionId is null)
+                                {
+                                    <button class="kiosk-btn-secondary" @onclick:stopPropagation="true" @onclick="() => OpenMovie(movie)">@UiStrings.Details</button>
+                                }
+                                <button class="kiosk-btn-primary" @onclick:stopPropagation="true" @onclick="() => StartBooking(movie)">@UiStrings.Book</button>
+                            </div>
+                        </div>
+                    </div>
+                }
+            </div>
+
+            @if (ShowMightLikeSection)
+            {
+                <div class="kiosk-might-like-section">
+                    <div class="kiosk-section-header">
+                        <div>
+                            <MudText Typo="Typo.h4" Class="mb-1">@UiStrings.YouMightLike</MudText>
+                            <MudText Typo="Typo.body2" Class="kiosk-muted">
+                                На основі вподобань схожих клієнтів
+                            </MudText>
+                        </div>
+                    </div>
+
+                    <div class="kiosk-movie-grid">
+                        @foreach (var movie in mightLikeMovies)
+                        {
+                            <div class="kiosk-movie-card" @onclick="() => OnMovieClick(movie)">
+                                <div class="kiosk-movie-poster">
+                                    <img src="@movie.PosterUrl" alt="@movie.Title" />
+                                    <div class="kiosk-movie-badge">AI</div>
+                                    <div class="kiosk-movie-gradient"></div>
+                                </div>
+                                <div class="kiosk-movie-meta">
+                                    <div class="kiosk-movie-title">@movie.Title</div>
+                                    <div class="kiosk-movie-sub kiosk-muted">
+                                        @movie.ReleaseYear • @movie.DurationMinutes хв
+                                    </div>
+                                    <div class="kiosk-movie-genres">
+                                        @foreach (var genreName in movie.GenreNames.Take(3))
+                                        {
+                                            <span class="kiosk-pill">@UiStrings.Genre(genreName)</span>
+                                        }
+                                    </div>
+                                    <div class="kiosk-movie-actions">
+                                        <button class="kiosk-btn-secondary"
+                                                @onclick:stopPropagation="true"
+                                                @onclick="() => OpenMovie(movie)">
+                                            @UiStrings.Details
+                                        </button>
+                                        <button class="kiosk-btn-primary"
+                                                @onclick:stopPropagation="true"
+                                                @onclick="() => StartBooking(movie)">
+                                            @UiStrings.Book
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        }
+                    </div>
+                </div>
+            }
+        }
+    </div>
+</div>
+
+@code {
+    private bool isLoading = true;
+    private readonly List<MovieDto> recommendedMovies = new();
+    private readonly List<MovieDto> allMovies = new();
+    private readonly List<MovieDto> mightLikeMovies = new();
+    private string? loadError;
+
+    private string ActiveChip { get; set; } = UiStrings.RecommendationsTab;
+    private ElementReference mightLikeScrollRef;
+
+    [Inject] private ILogger<Recommendations>? Logger { get; set; }
+
+    private bool ShowMightLikeSection =>
+        State.AiSessionId is null
+        && ActiveChip == UiStrings.RecommendationsTab
+        && mightLikeMovies.Count > 0;
+
+    private IReadOnlyList<MovieDto> DisplayedMovies =>
+        ActiveChip == UiStrings.AllMoviesTab ? allMovies : recommendedMovies;
+
+    protected override async Task OnInitializedAsync()
+    {
+        AiListener.CommandReceived += OnAiCommandAsync;
+        await LoadMoviesAsync();
+    }
+
+    private async Task LoadMoviesAsync()
+    {
+        isLoading = true;
+        loadError = null;
+        recommendedMovies.Clear();
+        allMovies.Clear();
+        mightLikeMovies.Clear();
+
+        try
+        {
+            if (!State.SessionToken.HasValue)
+            {
+                loadError = "Сесія не активна. Поверніться на головну сторінку.";
+                return;
+            }
+
+            allMovies.AddRange(await Http.GetFromJsonAsync<List<MovieDto>>("api/movies") ?? new());
+            if (State.AiSessionId is null)
+            {
+                if (State.PreferredGenres.Count > 0)
+                {
+                    var genres = string.Join(",", State.PreferredGenres);
+                    var byGenres = await Http.GetFromJsonAsync<List<MovieDto>>(
+                        $"api/movies/recommendations?genres={Uri.EscapeDataString(genres)}");
+                    recommendedMovies.AddRange(byGenres ?? new());
+                }
+                else
+                {
+                    recommendedMovies.AddRange(allMovies.Take(12));
+                }
+
+                DedupeRecommendedMovies();
+                await LoadMightLikeAsync();
+            }
+        }
+        catch (Exception ex)
+        {
+            loadError = "Не вдалося завантажити рекомендації.";
+            KioskToast.Show(Snackbar, $"Помилка: {ex.Message}", Severity.Error);
+            Logger?.LogError(ex, "Failed to load recommendations");
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    private async Task LoadMightLikeAsync()
+    {
+        mightLikeMovies.Clear();
+
+        if (!State.SessionToken.HasValue)
+            return;
+
+        try
+        {
+            var exclude = string.Join(",", recommendedMovies.Select(m => m.Id));
+            var url = string.IsNullOrWhiteSpace(exclude)
+                ? $"api/recommendations/session/{State.SessionToken}/might-like?topN=6"
+                : $"api/recommendations/session/{State.SessionToken}/might-like?topN=6&exclude={Uri.EscapeDataString(exclude)}";
+
+            var collaborative = await Http.GetFromJsonAsync<List<MovieDto>>(url);
+            if (collaborative is { Count: > 0 })
+                mightLikeMovies.AddRange(collaborative);
+        }
+        catch (Exception ex)
+        {
+            Logger?.LogWarning(ex, "Failed to load collaborative recommendations");
+        }
+    }
+
+    private async Task OnAiCommandAsync(AiCommandDto command)
+    {
+        if (command.Command != "sync_recommendations")
+            return;
+
+        var ids = AiPayloadHelper.GetStringList(command.Payload, "movie_ids");
+        if (ids.Count == 0)
+            return;
+
+        recommendedMovies.Clear();
+        var seenIds = new HashSet<Guid>();
+        foreach (var idText in ids)
+        {
+            if (!Guid.TryParse(idText, out var id) || !seenIds.Add(id))
+                continue;
+
+            var movie = await Http.GetFromJsonAsync<MovieDto>($"api/movies/{id}");
+            if (movie is not null)
+                recommendedMovies.Add(movie);
+        }
+
+        DedupeRecommendedMovies();
+
+        await InvokeAsync(StateHasChanged);
+        Logger?.LogInformation("Synced {Count} movies from agent", recommendedMovies.Count);
+    }
+
+    private void DedupeRecommendedMovies()
+    {
+        var unique = recommendedMovies
+            .GroupBy(m => m.Id)
+            .Select(g => g.First())
+            .ToList();
+
+        recommendedMovies.Clear();
+        recommendedMovies.AddRange(unique);
+    }
+
+    private void SetChip(string chip) => ActiveChip = chip;
+
+    private async Task ScrollMightLike(int direction) =>
+        await JS.InvokeVoidAsync("kioskCarousel.scrollByCard", mightLikeScrollRef, direction);
+
+    private void OnMovieClick(MovieDto movie)
+    {
+        if (State.AiSessionId is not null)
+            StartBooking(movie);
+        else
+            OpenMovie(movie);
+    }
+
+    private void OpenMovie(MovieDto movie)
+    {
+        State.SelectMovie(movie);
+        Nav.NavigateTo($"/movie/{movie.Id}");
+    }
+
+    private void StartBooking(MovieDto movie)
+    {
+        State.SelectMovie(movie);
+        Nav.NavigateTo($"/sessions/{movie.Id}");
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        AiListener.CommandReceived -= OnAiCommandAsync;
+        await Task.CompletedTask;
+    }
+}

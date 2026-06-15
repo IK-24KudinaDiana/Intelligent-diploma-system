@@ -1,0 +1,58 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.0.31903.59
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "src", "src", "{DFAAA2A8-6BA7-42FD-AF62-FBBDDD1C6009}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "CinemaKioskRecommender.Domain", "src\Domain\CinemaKioskRecommender.Domain.csproj", "{78289696-8F8F-4F56-AC95-1BEB6E09192E}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "CinemaKioskRecommender.Application", "src\Application\CinemaKioskRecommender.Application.csproj", "{D7CC5566-5A8D-4F37-B584-9193651E0E02}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "CinemaKioskRecommender.Infrastructure", "src\Infrastructure\CinemaKioskRecommender.Infrastructure.csproj", "{D95B435C-4F25-4499-91E1-637ADB52376C}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "CinemaKioskRecommender.WebAPI", "src\WebAPI\CinemaKioskRecommender.WebAPI.csproj", "{43416046-649A-4050-B220-70EFDCAFC69F}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "CinemaKioskRecommender.Kiosk", "src\Kiosk\CinemaKioskRecommender.Kiosk.csproj", "{35C3F46A-1B4B-406E-9BC8-048F382569AE}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{78289696-8F8F-4F56-AC95-1BEB6E09192E}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{78289696-8F8F-4F56-AC95-1BEB6E09192E}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{78289696-8F8F-4F56-AC95-1BEB6E09192E}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{78289696-8F8F-4F56-AC95-1BEB6E09192E}.Release|Any CPU.Build.0 = Release|Any CPU
+		{D7CC5566-5A8D-4F37-B584-9193651E0E02}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{D7CC5566-5A8D-4F37-B584-9193651E0E02}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{D7CC5566-5A8D-4F37-B584-9193651E0E02}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{D7CC5566-5A8D-4F37-B584-9193651E0E02}.Release|Any CPU.Build.0 = Release|Any CPU
+		{D95B435C-4F25-4499-91E1-637ADB52376C}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{D95B435C-4F25-4499-91E1-637ADB52376C}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{D95B435C-4F25-4499-91E1-637ADB52376C}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{D95B435C-4F25-4499-91E1-637ADB52376C}.Release|Any CPU.Build.0 = Release|Any CPU
+		{43416046-649A-4050-B220-70EFDCAFC69F}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{43416046-649A-4050-B220-70EFDCAFC69F}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{43416046-649A-4050-B220-70EFDCAFC69F}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{43416046-649A-4050-B220-70EFDCAFC69F}.Release|Any CPU.Build.0 = Release|Any CPU
+		{35C3F46A-1B4B-406E-9BC8-048F382569AE}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{35C3F46A-1B4B-406E-9BC8-048F382569AE}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{35C3F46A-1B4B-406E-9BC8-048F382569AE}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{35C3F46A-1B4B-406E-9BC8-048F382569AE}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(NestedProjects) = preSolution
+		{78289696-8F8F-4F56-AC95-1BEB6E09192E} = {DFAAA2A8-6BA7-42FD-AF62-FBBDDD1C6009}
+		{D7CC5566-5A8D-4F37-B584-9193651E0E02} = {DFAAA2A8-6BA7-42FD-AF62-FBBDDD1C6009}
+		{D95B435C-4F25-4499-91E1-637ADB52376C} = {DFAAA2A8-6BA7-42FD-AF62-FBBDDD1C6009}
+		{43416046-649A-4050-B220-70EFDCAFC69F} = {DFAAA2A8-6BA7-42FD-AF62-FBBDDD1C6009}
+		{35C3F46A-1B4B-406E-9BC8-048F382569AE} = {DFAAA2A8-6BA7-42FD-AF62-FBBDDD1C6009}
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {2E25266D-0E63-44DD-8C01-90C3AE5767C0}
+	EndGlobalSection
+EndGlobal

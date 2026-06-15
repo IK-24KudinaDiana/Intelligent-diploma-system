@@ -1,0 +1,194 @@
+@page "/sessions"
+@page "/sessions/{MovieId:guid}"
+@layout CinemaKioskRecommender.Kiosk.Layout.ShellLayout
+@using CinemaKioskRecommender.Application.DTOs
+@using CinemaKioskRecommender.Kiosk.Services
+@using CinemaKioskRecommender.Kiosk.Localization
+@using MudBlazor
+@inject HttpClient Http
+@inject NavigationManager Nav
+@inject KioskState State
+
+<div class="kiosk-sessions-page">
+    <div class="kiosk-section-header">
+        <div>
+            <MudText Typo="Typo.h4" Class="mb-1">Оберіть сеанс</MudText>
+            <MudText Typo="Typo.body2" Class="kiosk-muted">
+                @((movieTitle is null) ? "Оберіть час показу на сьогодні" : $"Сеанси фільму: {movieTitle}")
+            </MudText>
+        </div>
+        <button class="kiosk-btn-secondary kiosk-header-action" @onclick="GoBack">@UiStrings.Back</button>
+    </div>
+
+    @if (isLoading)
+    {
+        <MudProgressCircular Indeterminate="true" Size="Size.Large" />
+    }
+    else if (sessions.Count == 0)
+    {
+        <MudText Class="kiosk-muted">Сеансів не знайдено.</MudText>
+    }
+    else
+    {
+        <div class="kiosk-session-grid">
+            @foreach (var s in sessions.OrderBy(x => x.StartTime))
+            {
+                <div class="kiosk-session-card" @onclick="() => SelectSession(s)">
+                    <div class="kiosk-session-top">
+                        <div class="kiosk-session-title">@s.MovieTitle</div>
+                        <div class="kiosk-session-time">@s.StartTimeFormatted</div>
+                    </div>
+                    <div class="kiosk-session-sub kiosk-muted">@s.HallName</div>
+                    <div class="kiosk-session-price">@s.Price.ToString("0") ₴</div>
+                    <div class="kiosk-session-cta kiosk-muted">Натисніть, щоб обрати місця</div>
+                </div>
+            }
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter] public Guid? MovieId { get; set; }
+
+    private List<SessionDto> sessions = new();
+    private bool isLoading = true;
+    private string? movieTitle;
+
+    protected override async Task OnInitializedAsync()
+    {
+        isLoading = true;
+        try
+        {
+            string url = MovieId.HasValue
+                ? $"api/sessions/movie/{MovieId}"
+                : "api/sessions";
+
+            Console.WriteLine($"[Sessions] Запит: {url}");
+            sessions = await Http.GetFromJsonAsync<List<SessionDto>>(url) ?? new();
+
+            if (MovieId.HasValue)
+            {
+                var m = State.SelectedMovie;
+                if (m == null || m.Id != MovieId.Value)
+                {
+                    m = await Http.GetFromJsonAsync<MovieDto>($"api/movies/{MovieId.Value}");
+                    if (m != null) State.SelectMovie(m);
+                }
+                movieTitle = m?.Title;
+            }
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    private void SelectSession(SessionDto session)
+    {
+
+        State.SetCurrentSession(
+        session.Id,
+        session.MovieTitle,
+        session.HallName,
+        session.StartTime,
+        session.Price);
+
+        Nav.NavigateTo($"/seats/{session.Id}");
+    }
+
+    private SessionDto? FindSession(Dictionary<string, object> payload)
+    {
+        if (payload.TryGetValue("session_id", out var sessionIdObj) &&
+            Guid.TryParse(sessionIdObj?.ToString(), out Guid sessionId))
+        {
+            var byId = sessions.FirstOrDefault(s => s.Id == sessionId);
+            if (byId != null)
+                return byId;
+        }
+
+        IEnumerable<SessionDto> candidates = sessions;
+
+        if (payload.TryGetValue("date", out var dateObj))
+        {
+            var filtered = MatchByDateString(dateObj?.ToString());
+            if (filtered.Count > 0)
+                candidates = filtered;
+        }
+
+        foreach (var key in new[] { "time", "start_time" })
+        {
+            if (payload.TryGetValue(key, out var timeObj))
+            {
+                var byTime = MatchByTimeString(timeObj?.ToString(), candidates);
+                if (byTime != null)
+                    return byTime;
+            }
+        }
+
+        if (payload.TryGetValue("hall_number", out var hallObj))
+        {
+            var hall = hallObj?.ToString();
+            return candidates.FirstOrDefault(s => s.HallName.EndsWith(hall ?? "", StringComparison.OrdinalIgnoreCase));
+        }
+
+        return null;
+    }
+
+    private List<SessionDto> MatchByDateString(string? dateStr)
+    {
+        if (string.IsNullOrWhiteSpace(dateStr))
+            return new();
+
+        if (DateTime.TryParse(dateStr, out var dt))
+        {
+            return sessions
+                .Where(s => s.StartTime.Date == dt.Date)
+                .ToList();
+        }
+
+        var normalized = dateStr.Trim();
+        return sessions
+            .Where(s => s.StartTime.ToString("dd.MM.yyyy") == normalized
+                        || s.StartTime.ToString("dd.MM") == normalized)
+            .ToList();
+    }
+
+    private SessionDto? MatchByTimeString(string? timeStr, IEnumerable<SessionDto>? scope = null)
+    {
+        if (string.IsNullOrWhiteSpace(timeStr))
+            return null;
+
+        var pool = (scope ?? sessions).ToList();
+
+        if (DateTime.TryParse(timeStr, out var dt))
+        {
+            return pool.FirstOrDefault(s =>
+                s.StartTime.Hour == dt.Hour && s.StartTime.Minute == dt.Minute);
+        }
+
+        var normalized = timeStr.Trim().Replace('.', ':');
+        var parts = normalized.Split(':', ' ');
+        if (parts.Length >= 2 &&
+            int.TryParse(parts[0], out var hour) &&
+            int.TryParse(parts[1], out var minute))
+        {
+            var exact = pool.FirstOrDefault(s =>
+                s.StartTime.Hour == hour && s.StartTime.Minute == minute);
+            if (exact != null)
+                return exact;
+
+            var targetMinutes = hour * 60 + minute;
+            return pool
+                .OrderBy(s => Math.Abs(s.StartTime.Hour * 60 + s.StartTime.Minute - targetMinutes))
+                .FirstOrDefault();
+        }
+
+        return null;
+    }
+
+    private void GoBack()
+    {
+        if (MovieId.HasValue) Nav.NavigateTo($"/movie/{MovieId.Value}");
+        else Nav.NavigateTo("/recommendations");
+    }
+}

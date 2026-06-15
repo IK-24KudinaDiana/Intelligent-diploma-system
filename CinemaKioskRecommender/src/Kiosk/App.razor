@@ -1,0 +1,24 @@
+@using MudBlazor
+
+<MudThemeProvider />
+<MudPopoverProvider />
+<MudDialogProvider />
+<MudSnackbarProvider Position="SnackbarPosition.BottomCenter"
+                     ShowTransitionDuration="280"
+                     HideTransitionDuration="220"
+                     VisibleStateDuration="3200"
+                     MaxDisplayedSnackbars="4"
+                     PreventDuplicates="true" />
+
+<Router AppAssembly="@typeof(App).Assembly">
+    <Found Context="routeData">
+        <RouteView RouteData="@routeData" DefaultLayout="@typeof(MainLayout)" />
+        <FocusOnNavigate RouteData="@routeData" Selector="h1" />
+    </Found>
+    <NotFound>
+        <PageTitle>Сторінку не знайдено</PageTitle>
+        <LayoutView Layout="@typeof(MainLayout)">
+            <p role="alert">На жаль, сторінку не знайдено.</p>
+        </LayoutView>
+    </NotFound>
+</Router>
